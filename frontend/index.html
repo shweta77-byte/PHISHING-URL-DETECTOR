@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Phishing URL Detector</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI';
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            width: 420px;
+            text-align: center;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #result {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+
+        .safe { color: green; }
+        .phishing { color: red; }
+
+        ul {
+            text-align: left;
+            padding-left: 20px;
+        }
+
+        .clear-btn {
+            background: red;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h2>🔐 Phishing Detector</h2>
+
+    <input id="url" placeholder="Enter URL">
+
+    <button onclick="checkURL()">Check</button>
+
+    <div id="result"></div>
+
+    <h3>Recent Checks</h3>
+    <ul id="history">No history yet</ul>
+
+    <button class="clear-btn" onclick="clearHistory()">Clear History</button>
+
+    <canvas id="chart"></canvas>
+
+</div>
+
+<script>
+
+let historyData = [];
+let chart;
+
+// 🔍 MAIN FUNCTION
+async function checkURL() {
+
+    const url = document.getElementById("url").value;
+    const resultDiv = document.getElementById("result");
+
+    if (!url.trim()) {
+        resultDiv.innerText = "Please enter a URL";
+        return;
+    }
+
+    resultDiv.innerText = "Checking...";
+
+    try {
+        const response = await fetch("http://127.0.0.1:8000/predict", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                url: url,
+                url_length: url.length,
+                valid_url: 1,
+                at_symbol: url.includes("@") ? 1 : 0,
+                sensitive_words_count: 0,
+                path_length: url.split("/").length,
+                isHttps: url.startsWith("https") ? 1 : 0,
+                nb_dots: (url.match(/\./g) || []).length,
+                nb_hyphens: (url.match(/-/g) || []).length,
+                nb_and: (url.match(/&/g) || []).length,
+                nb_or: (url.match(/or/g) || []).length,
+                nb_www: url.includes("www") ? 1 : 0,
+                nb_com: url.includes(".com") ? 1 : 0,
+                nb_underscore: (url.match(/_/g) || []).length
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.prediction) {
+            resultDiv.innerText = "Error";
+            return;
+        }
+
+        // Color
+        if (result.prediction.includes("Safe")) {
+            resultDiv.className = "safe";
+        } else {
+            resultDiv.className = "phishing";
+        }
+
+        // Display
+        resultDiv.innerHTML = `
+            ${result.prediction}<br>
+            Confidence: ${result.confidence}%
+        `;
+
+        // Save history (only prediction + confidence)
+        historyData.push({
+            prediction: result.prediction,
+            confidence: result.confidence
+        });
+
+        updateHistory();
+
+    } catch (error) {
+        console.error(error);
+        resultDiv.innerText = "Server error";
+    }
+}
+
+
+// 📜 UPDATE HISTORY
+function updateHistory() {
+    const list = document.getElementById("history");
+    list.innerHTML = "";
+
+    if (historyData.length === 0) {
+        list.innerHTML = "No history yet";
+        drawChart(0, 0);
+        return;
+    }
+
+    let safe = 0, phishing = 0;
+
+    // Only last 3 entries
+    const last = historyData.slice(-3).reverse();
+
+    last.forEach(item => {
+        const li = document.createElement("li");
+        li.innerHTML = `${item.prediction} (${item.confidence}%)`;
+        list.appendChild(li);
+
+        if (item.prediction.includes("Safe")) safe++;
+        else phishing++;
+    });
+
+    drawChart(safe, phishing);
+}
+
+
+// 📊 DRAW CHART
+function drawChart(safe, phishing) {
+    const ctx = document.getElementById("chart");
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+        type: "pie",
+        data: {
+            labels: ["Safe", "Phishing"],
+            datasets: [{
+                data: [safe, phishing]
+            }]
+        }
+    });
+}
+
+
+// 🧹 CLEAR HISTORY
+function clearHistory() {
+    historyData = [];
+    updateHistory();
+}
+
+</script>
+
+</body>
+</html>
